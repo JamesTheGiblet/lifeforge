@@ -763,28 +763,28 @@
                 this.energy -= 2; // Increased cost of living
                 
                 // Energy production and sharing
-                if (this.type === CellTypes.DIGESTIVE) {
-                    this.energy = Math.min(250, this.energy + 5); // Produce energy
-                } else {
-                    // Request energy from neighbors
+                if (this.type === CellTypes.DIGESTIVE) { // Digestive cells produce energy
+                    this.energy = Math.min(250, this.energy + 6); 
+                }
+
+                // All cells can share surplus energy with starving neighbors
+                if (this.energy > 150) {
                     const directions = [{dx: 1, dy: 0}, {dx: -1, dy: 0}, {dx: 0, dy: 1}, {dx: 0, dy: -1}];
-                    for (const dir of directions) {
-                        const nx = this.x + dir.dx;
-                        const ny = this.y + dir.dy;
-
-                        if (nx >= 0 && nx < Config.gridWidth && ny >= 0 && ny < Config.gridHeight) {
-                            const neighborIndex = ny * Config.gridWidth + nx;
-                            const neighbor = cellGrid[neighborIndex];
-
-                            if (neighbor && neighbor.type === CellTypes.DIGESTIVE && neighbor.energy > 100) {
-                                const transferAmount = 10;
-                                this.energy = Math.min(150, this.energy + transferAmount);
-                                neighbor.energy -= transferAmount; // Energy is transferred, not created
-                                break; // Only need to get energy from one neighbor
-                            }
+                    for (const dir of directions.sort(() => Math.random() - 0.5)) {
+                        const nx = this.x + dir.dx, ny = this.y + dir.dy;
+                        if (nx < 0 || nx >= Config.gridWidth || ny < 0 || ny >= Config.gridHeight) continue;
+                        
+                        const neighbor = cellGrid[ny * Config.gridWidth + nx];
+                        // If neighbor exists and is starving, transfer energy
+                        if (neighbor && neighbor.energy < 50) {
+                            const transferAmount = 20;
+                            neighbor.energy = Math.min(200, neighbor.energy + transferAmount);
+                            this.energy -= transferAmount;
+                            if (this.energy <= 150) break; // Stop sharing if no longer in surplus
                         }
                     }
                 }
+
 
 
                 // --- Differentiation and Division ---
@@ -797,9 +797,29 @@
                 }
                 
                 // Division readiness
-                if (this.type === CellTypes.STEM && this.divisionCooldown === 0 && this.energy > 100 && Math.random() < Config.divisionRate / 50) {
-                    this.readyToDivide = true;
-                    this.energy -= 50; // Cost of preparing to divide
+                if (this.type === CellTypes.STEM && this.divisionCooldown === 0 && this.energy > 100 && !this.readyToDivide) {
+                    if (Math.random() < Config.divisionRate / 50) {
+                        // Check for crowding (Contact Inhibition)
+                        let neighborCount = 0;
+                        const directions = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1},{dx:1,dy:1},{dx:-1,dy:-1},{dx:1,dy:-1},{dx:-1,dy:1}];
+                        for (const dir of directions) {
+                            const nx = this.x + dir.dx;
+                            const ny = this.y + dir.dy;
+                            if (nx >= 0 && nx < Config.gridWidth && ny >= 0 && ny < Config.gridHeight) {
+                                const neighbor = cellGrid[ny * Config.gridWidth + nx];
+                                if (neighbor) {
+                                    neighborCount++;
+                                }
+                            }
+                        }
+
+                        // Only divide if not too crowded, encouraging branching.
+                        const CROWDING_THRESHOLD = 2;
+                        if (neighborCount <= CROWDING_THRESHOLD) {
+                            this.readyToDivide = true;
+                            this.energy -= 50; // Cost of preparing to divide
+                        }
+                    }
                 }
 
                 // Apoptosis (programmed cell death)
@@ -982,7 +1002,7 @@
                     const directions = [
                         {dx: 1, dy: 0}, {dx: -1, dy: 0},
                         {dx: 0, dy: 1}, {dx: 0, dy: -1}
-                    ];
+                    ].sort(() => Math.random() - 0.5); // Shuffle directions
                     
                     for (const dir of directions) {
                         const nx = cell.x + dir.dx;
