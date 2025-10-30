@@ -16,12 +16,7 @@
         body {
             background: linear-gradient(135deg, #0a0e27 0%, #1a1a2e 100%);
             color: #e0f0ff;
-            min-height: 100vh;
-            overflow-x: hidden;
-            touch-action: pan-y;
-        }
-        
-        .container {
+
             max-width: 1400px;
             margin: 0 auto;
             padding: 10px;
@@ -109,6 +104,8 @@
             padding: 15px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             border: 1px solid rgba(79, 172, 254, 0.2);
+            
+            -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
             height: fit-content;
         }
@@ -168,6 +165,7 @@
         .slider {
             flex: 1;
             -webkit-appearance: none;
+            appearance: none;
             height: 8px;
             border-radius: 5px;
             background: rgba(79, 172, 254, 0.2);
@@ -261,6 +259,7 @@
             padding: 15px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             border: 1px solid rgba(79, 172, 254, 0.2);
+            -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
         }
         
@@ -301,7 +300,7 @@
         
         @media (min-width: 640px) {
             .stats-bar {
-                grid-template-columns: repeat(4, 1fr);
+                grid-template-columns: repeat(5, 1fr);
                 gap: 15px;
                 margin-top: 20px;
             }
@@ -519,8 +518,10 @@
         
         .canvas-wrapper {
             -ms-overflow-style: none;
-            scrollbar-width: none;
         }
+    </style>
+    <style>
+        @media (min-width: 640px) { .stats-bar { grid-template-columns: repeat(5, 1fr); } }
     </style>
 </head>
 <body>
@@ -556,7 +557,7 @@
                 <div class="control-group">
                     <label class="control-label">Development Speed</label>
                     <div class="slider-container">
-                        <input type="range" class="slider" id="speedSlider" min="1" max="10" value="3" step="1">
+                        <input type="range" class="slider" id="speedSlider" min="1" max="10" value="3" step="1" title="Development Speed">
                         <span class="slider-value" id="speedValue">3x</span>
                     </div>
                 </div>
@@ -564,7 +565,7 @@
                 <div class="control-group">
                     <label class="control-label">Mutation Rate</label>
                     <div class="slider-container">
-                        <input type="range" class="slider" id="mutationSlider" min="0" max="20" value="2" step="1">
+                        <input type="range" class="slider" id="mutationSlider" min="0" max="20" value="2" step="1" title="Mutation Rate">
                         <span class="slider-value" id="mutationValue">2%</span>
                     </div>
                 </div>
@@ -572,7 +573,7 @@
                 <div class="control-group">
                     <label class="control-label">Morphogen Strength</label>
                     <div class="slider-container">
-                        <input type="range" class="slider" id="morphogenSlider" min="1" max="10" value="5" step="1">
+                        <input type="range" class="slider" id="morphogenSlider" min="1" max="10" value="5" step="1" title="Morphogen Strength">
                         <span class="slider-value" id="morphogenValue">5</span>
                     </div>
                 </div>
@@ -580,7 +581,7 @@
                 <div class="control-group">
                     <label class="control-label">Cell Division Rate</label>
                     <div class="slider-container">
-                        <input type="range" class="slider" id="divisionSlider" min="1" max="10" value="5" step="1">
+                        <input type="range" class="slider" id="divisionSlider" min="1" max="10" value="5" step="1" title="Cell Division Rate">
                         <span class="slider-value" id="divisionValue">5</span>
                     </div>
                 </div>
@@ -614,8 +615,6 @@
                 
                 <div class="canvas-wrapper">
                     <canvas id="lifeCanvas"></canvas>
-                </div>
-                
                 <div class="stats-bar">
                     <div class="stat-card">
                         <div class="stat-value" id="cellCount">1</div>
@@ -633,6 +632,13 @@
                         <div class="stat-value" id="generation">0</div>
                         <div class="stat-label">Generation</div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="timeElapsed">0s</div>
+                        <div class="stat-label">Time Elapsed</div>
+                    </div>
+                </div>
+                
+                <div class="cell-legend">
                 </div>
                 
                 <div class="cell-legend">
@@ -676,13 +682,16 @@
         // ============================================
         
         const canvas = document.getElementById('lifeCanvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const phaseIndicator = document.getElementById('phaseIndicator');
         
         // Configuration - define FIRST before anything else
         const Config = {
             cellSize: window.innerWidth < 640 ? 6 : 8,
             gridWidth: 0,
             gridHeight: 0,
+            maxCells: 2500,
+            updatesPerFrame: 3,
             speed: 3,
             mutationRate: 0.02,
             morphogenStrength: 5,
@@ -690,6 +699,14 @@
             developmentMode: 'symmetric'
         };
         
+        // DOM Elements
+        const cellCountEl = document.getElementById('cellCount');
+        const stemCellsEl = document.getElementById('stemCells');
+        const divisionsEl = document.getElementById('divisions');
+        const generationEl = document.getElementById('generation');
+        const speedValueEl = document.getElementById('speedValue');
+        const mutationValueEl = document.getElementById('mutationValue');
+
         // Set canvas size - define the function but DON'T call it yet
         function resizeCanvas() {
             canvas.width = canvas.offsetWidth;
@@ -717,12 +734,13 @@
         
         // Cell types with colors
         const CellTypes = {
-            STEM: { name: 'stem', color: '#a855f7', glow: 'rgba(168, 85, 247, 0.5)' },
-            MUSCLE: { name: 'muscle', color: '#ef4444', glow: 'rgba(239, 68, 68, 0.5)' },
-            NEURAL: { name: 'neural', color: '#3b82f6', glow: 'rgba(59, 130, 246, 0.5)' },
-            DIGESTIVE: { name: 'digestive', color: '#10b981', glow: 'rgba(16, 185, 129, 0.5)' },
-            STRUCTURAL: { name: 'structural', color: '#f59e0b', glow: 'rgba(245, 158, 11, 0.5)' },
-            REPRODUCTIVE: { name: 'reproductive', color: '#ec4899', glow: 'rgba(236, 72, 153, 0.5)' }
+            STEM: { name: 'stem', color: '#a855f7', glow: 'rgba(168, 85, 247, 0.5)', produces: null },
+            MUSCLE: { name: 'muscle', color: '#ef4444', glow: 'rgba(239, 68, 68, 0.5)', produces: 'ap' },
+            NEURAL: { name: 'neural', color: '#3b82f6', glow: 'rgba(59, 130, 246, 0.5)', produces: 'dv' },
+            DIGESTIVE: { name: 'digestive', color: '#10b981', glow: 'rgba(16, 185, 129, 0.5)', produces: null },
+            STRUCTURAL: { name: 'structural', color: '#f59e0b', glow: 'rgba(245, 158, 11, 0.5)', produces: null },
+            REPRODUCTIVE: { name: 'reproductive', color: '#ec4899', glow: 'rgba(236, 72, 153, 0.5)', produces: 'lr' },
+            DEAD: { name: 'dead', color: '#475569', glow: 'rgba(71, 85, 105, 0.5)', produces: null }
         };
         
         // Cell class
@@ -733,66 +751,80 @@
                 this.type = type;
                 this.age = 0;
                 this.generation = generation;
-                this.energy = 100;
-                this.divisionCooldown = 0;
+                this.energy = 150;
+                this.divisionCooldown = 10;
                 this.readyToDivide = false;
+                this.isProgenitor = false;
             }
             
-            update(morphogenField) {
+            update(morphogenField, cellGrid) {
                 this.age++;
                 this.divisionCooldown = Math.max(0, this.divisionCooldown - 1);
+                this.energy -= 2; // Increased cost of living
                 
-                // Get chemical signals at position
+                // Energy production and sharing
+                if (this.type === CellTypes.DIGESTIVE) {
+                    this.energy = Math.min(250, this.energy + 5); // Produce energy
+                } else {
+                    // Request energy from neighbors
+                    const directions = [{dx: 1, dy: 0}, {dx: -1, dy: 0}, {dx: 0, dy: 1}, {dx: 0, dy: -1}];
+                    for (const dir of directions) {
+                        const nx = this.x + dir.dx;
+                        const ny = this.y + dir.dy;
+
+                        if (nx >= 0 && nx < Config.gridWidth && ny >= 0 && ny < Config.gridHeight) {
+                            const neighborIndex = ny * Config.gridWidth + nx;
+                            const neighbor = cellGrid[neighborIndex];
+
+                            if (neighbor && neighbor.type === CellTypes.DIGESTIVE && neighbor.energy > 100) {
+                                const transferAmount = 10;
+                                this.energy = Math.min(150, this.energy + transferAmount);
+                                neighbor.energy -= transferAmount; // Energy is transferred, not created
+                                break; // Only need to get energy from one neighbor
+                            }
+                        }
+                    }
+                }
+
+
+                // --- Differentiation and Division ---
                 const signals = morphogenField.getSignalsAt(this.x, this.y);
                 
                 // Differentiation logic based on position and signals
-                if (this.type === CellTypes.STEM && this.age > 10) {
+                if (this.isProgenitor && this.type === CellTypes.STEM && this.age > 20 && this.energy > 50) {
                     this.differentiate(signals);
+                    this.isProgenitor = false; // It has now differentiated
                 }
                 
                 // Division readiness
-                if (this.divisionCooldown === 0 && this.age > 5 && Math.random() < Config.divisionRate / 100) {
+                if (this.type === CellTypes.STEM && this.divisionCooldown === 0 && this.energy > 100 && Math.random() < Config.divisionRate / 50) {
                     this.readyToDivide = true;
+                    this.energy -= 50; // Cost of preparing to divide
+                }
+
+                // Apoptosis (programmed cell death)
+                if (this.energy <= 0) {
+                    this.type = CellTypes.DEAD;
                 }
             }
             
             differentiate(signals) {
-                const posX = this.x / Config.gridWidth;
-                const posY = this.y / Config.gridHeight;
-                
-                // Differentiation based on position and development mode
-                if (Config.developmentMode === 'symmetric') {
-                    // Bilateral symmetry
-                    if (posY < 0.2) {
-                        this.type = CellTypes.NEURAL; // Head
-                    } else if (posY > 0.8) {
-                        this.type = CellTypes.REPRODUCTIVE; // Tail
-                    } else if (posX < 0.3 || posX > 0.7) {
-                        this.type = CellTypes.MUSCLE; // Sides
-                    } else if (posY > 0.4 && posY < 0.6) {
-                        this.type = CellTypes.DIGESTIVE; // Center
-                    } else {
-                        this.type = CellTypes.STRUCTURAL; // Structure
-                    }
-                } else if (Config.developmentMode === 'segmented') {
-                    // Segmented body
-                    const segment = Math.floor(posY * 5);
-                    if (segment === 0) this.type = CellTypes.NEURAL;
-                    else if (segment % 2 === 0) this.type = CellTypes.MUSCLE;
-                    else this.type = CellTypes.STRUCTURAL;
-                } else if (Config.developmentMode === 'radial') {
-                    // Radial symmetry
-                    const centerX = 0.5;
-                    const centerY = 0.5;
-                    const dist = Math.sqrt((posX - centerX)**2 + (posY - centerY)**2);
-                    
-                    if (dist < 0.2) this.type = CellTypes.DIGESTIVE; // Center
-                    else if (dist < 0.4) this.type = CellTypes.STRUCTURAL;
-                    else this.type = CellTypes.NEURAL; // Edges
+                // Differentiation based on local chemical signals
+                const { ap, dv, lr } = signals;
+
+                // Find the strongest signal
+                if (ap > dv && ap > lr && ap > 0.3) {
+                    this.type = CellTypes.MUSCLE;
+                } else if (dv > ap && dv > lr && dv > 0.3) {
+                    this.type = CellTypes.NEURAL;
+                } else if (lr > ap && lr > dv && lr > 0.3) {
+                    this.type = CellTypes.REPRODUCTIVE;
+                } else if (ap < 0.2 && dv < 0.2 && lr < 0.2) {
+                    // Low signal areas become digestive
+                    this.type = CellTypes.DIGESTIVE;
                 } else {
-                    // Random
-                    const types = [CellTypes.MUSCLE, CellTypes.NEURAL, CellTypes.DIGESTIVE, CellTypes.STRUCTURAL, CellTypes.REPRODUCTIVE];
-                    this.type = types[Math.floor(Math.random() * types.length)];
+                    // Default to structural if signals are mixed or weak
+                    this.type = CellTypes.STRUCTURAL;
                 }
                 
                 // Mutation chance
@@ -806,32 +838,83 @@
         // Morphogen field for chemical signaling
         class MorphogenField {
             constructor() {
-                this.anteriorPosterior = []; // Head to tail gradient
-                this.dorsalVentral = []; // Back to belly gradient
-                this.leftRight = []; // Symmetry gradient
-                
+                this.ap = []; // Anterior-Posterior
+                this.dv = []; // Dorsal-Ventral
+                this.lr = []; // Left-Right
                 this.initialize();
             }
             
             initialize() {
+                const size = Config.gridWidth * Config.gridHeight;
+                this.ap = new Array(size).fill(0);
+                this.dv = new Array(size).fill(0);
+                this.lr = new Array(size).fill(0);
+
+                // Initial morphogen sources based on mode
+                if (Config.developmentMode === 'symmetric') {
+                    this.ap[Math.floor(Config.gridHeight / 2) * Config.gridWidth + Math.floor(Config.gridWidth * 0.2)] = 1;
+                    this.dv[Math.floor(Config.gridHeight * 0.2) * Config.gridWidth + Math.floor(Config.gridWidth / 2)] = 1;
+                } else if (Config.developmentMode === 'segmented') {
+                    for(let i = 1; i < 5; i++) {
+                        this.ap[Math.floor(Config.gridHeight * i / 5) * Config.gridWidth + Math.floor(Config.gridWidth / 2)] = 1;
+                    }
+                } else if (Config.developmentMode === 'radial') {
+                     this.ap[Math.floor(Config.gridHeight / 2) * Config.gridWidth + Math.floor(Config.gridWidth / 2)] = 1;
+                }
+            }
+
+            update(cells) {
+                // Diffusion and decay
+                this.diffuse(this.ap, 0.05, 0.001);
+                this.diffuse(this.dv, 0.05, 0.001);
+                this.diffuse(this.lr, 0.05, 0.001);
+
+                // Cells producing morphogens
+                cells.forEach(cell => {
+                    if (cell.type.produces) {
+                        const index = cell.y * Config.gridWidth + cell.x;
+                        this[cell.type.produces][index] = Math.min(1, this[cell.type.produces][index] + 0.2 * (Config.morphogenStrength / 5));
+                    }
+                });
+            }
+
+            diffuse(grid, diffusionRate, decayRate) {
+                const newGrid = [...grid];
+                const { gridWidth, gridHeight } = Config;
+
                 for (let y = 0; y < Config.gridHeight; y++) {
                     for (let x = 0; x < Config.gridWidth; x++) {
-                        const normX = x / Config.gridWidth;
-                        const normY = y / Config.gridHeight;
+                        const index = y * gridWidth + x;
+                        let sum = 0;
+                        let count = 0;
+
+                        // Kernel for diffusion
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                const nx = x + dx;
+                                const ny = y + dy;
+                                if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < gridHeight) {
+                                    sum += grid[ny * gridWidth + nx];
+                                    count++;
+                                }
+                            }
+                        }
                         
-                        this.anteriorPosterior.push(normY);
-                        this.dorsalVentral.push(Math.abs(normX - 0.5) * 2);
-                        this.leftRight.push(normX < 0.5 ? 0 : 1);
+                        const average = sum / count;
+                        newGrid[index] += (average - grid[index]) * diffusionRate;
+                        newGrid[index] *= (1 - decayRate); // Decay
                     }
                 }
+                // Copy back
+                for(let i = 0; i < grid.length; i++) grid[i] = newGrid[i];
             }
             
             getSignalsAt(x, y) {
                 const index = y * Config.gridWidth + x;
                 return {
-                    ap: this.anteriorPosterior[index] || 0,
-                    dv: this.dorsalVentral[index] || 0,
-                    lr: this.leftRight[index] || 0
+                    ap: this.ap[index] || 0,
+                    dv: this.dv[index] || 0,
+                    lr: this.lr[index] || 0
                 };
             }
         }
@@ -842,7 +925,9 @@
         let running = false;
         let time = 0;
         let totalDivisions = 0;
+        let lastFrameTime = 0;
         let viewMode = 'cells';
+        let startTime = 0;
         
         // Initialize with single cell
         function initialize() {
@@ -854,23 +939,45 @@
             )];
             totalDivisions = 0;
             time = 0;
+            morphogenField.initialize();
+            startTime = 0;
             updateStats();
             updatePhase();
         }
         
         // Update simulation
-        function update() {
+        function gameLoop(timestamp) {
             if (!running) return;
-            
+
+            const elapsed = timestamp - lastFrameTime;
+            const interval = 1000 / Config.speed;
+
+            if (elapsed > interval) {
+                lastFrameTime = timestamp - (elapsed % interval);
+                
+                for (let i = 0; i < Config.updatesPerFrame; i++) {
+                    update();
+                }
+                draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
             time++;
-            
-            // Update all cells
-            cells.forEach(cell => cell.update(morphogenField));
+
+            // Create a spatial grid for efficient neighbor lookups
+            const cellGrid = new Array(Config.gridWidth * Config.gridHeight).fill(null);
+            cells.forEach(cell => {
+                const index = cell.y * Config.gridWidth + cell.x;
+                cellGrid[index] = cell;
+            });
             
             // Cell division
             const newCells = [];
             cells.forEach(cell => {
-                if (cell.readyToDivide && cells.length < 2000) {
+                if (cell.readyToDivide && cells.length < Config.maxCells) {
                     // Find empty neighbor
                     const directions = [
                         {dx: 1, dy: 0}, {dx: -1, dy: 0},
@@ -882,10 +989,12 @@
                         const ny = cell.y + dir.dy;
                         
                         if (nx >= 0 && nx < Config.gridWidth && ny >= 0 && ny < Config.gridHeight) {
-                            const occupied = cells.some(c => c.x === nx && c.y === ny);
+                            const occupied = cells.some(c => c.x === nx && c.y === ny) || newCells.some(c => c.x === nx && c.y === ny);
                             if (!occupied) {
-                                newCells.push(new Cell(nx, ny, CellTypes.STEM, cell.generation + 1));
-                                cell.divisionCooldown = 30;
+                                const newCell = new Cell(nx, ny, CellTypes.STEM, cell.generation + 1);
+                                newCell.isProgenitor = true; // This new cell is primed to differentiate
+                                newCells.push(newCell);
+                                cell.divisionCooldown = 20 + Math.floor(Math.random() * 20);
                                 cell.readyToDivide = false;
                                 totalDivisions++;
                                 break;
@@ -895,14 +1004,26 @@
                 }
             });
             
-            cells.push(...newCells);
+            if (newCells.length > 0) {
+                cells.push(...newCells);
+            }
+
+            // Update all cells and remove dead ones
+            cells.forEach(cell => cell.update(morphogenField, cellGrid));
+            cells = cells.filter(cell => cell.type !== CellTypes.DEAD);
+
+            // Check for organism death
+            if (cells.length === 0 && totalDivisions > 0) {
+                running = false;
+                updatePhase(); // Final phase update
+                return; // Stop further updates
+            }
+            // Update morphogen field
+            morphogenField.update(cells);
             
-            // Update display
-            draw();
+            // Update stats and phase (less frequently)
             updateStats();
             updatePhase();
-            
-            requestAnimationFrame(update);
         }
         
         // Draw cells
@@ -946,9 +1067,12 @@
             for (let y = 0; y < Config.gridHeight; y++) {
                 for (let x = 0; x < Config.gridWidth; x++) {
                     const signals = morphogenField.getSignalsAt(x, y);
-                    const intensity = signals.ap * 255;
+                    const r = Math.floor(signals.ap * 255);
+                    const g = Math.floor(signals.dv * 255);
+                    const b = Math.floor(signals.lr * 255);
+                    const alpha = Math.max(r,g,b) / 255 * 0.6;
                     
-                    ctx.fillStyle = `rgba(79, 172, 254, ${intensity / 255 * 0.5})`;
+                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
                     ctx.fillRect(x * Config.cellSize, y * Config.cellSize, Config.cellSize, Config.cellSize);
                 }
             }
@@ -992,16 +1116,26 @@
             const stemCount = cells.filter(c => c.type === CellTypes.STEM).length;
             const maxGen = cells.length > 0 ? Math.max(...cells.map(c => c.generation)) : 0;
             
-            document.getElementById('cellCount').textContent = cells.length;
-            document.getElementById('stemCells').textContent = stemCount;
-            document.getElementById('divisions').textContent = totalDivisions;
-            document.getElementById('generation').textContent = maxGen;
+            cellCountEl.textContent = cells.length;
+            stemCellsEl.textContent = stemCount;
+            divisionsEl.textContent = totalDivisions;
+            generationEl.textContent = maxGen;
+
+            // Update time elapsed
+            if (running && startTime > 0) {
+                const elapsedSeconds = Math.floor((performance.now() - startTime) / 1000);
+                document.getElementById('timeElapsed').textContent = `${elapsedSeconds}s`;
+            } else if (startTime === 0) {
+                document.getElementById('timeElapsed').textContent = '0s';
+            }
         }
         
         // Update phase indicator
         function updatePhase() {
             let phase = '';
-            if (cells.length === 1) {
+            if (cells.length === 0 && totalDivisions > 0) {
+                phase = 'DECEASED';
+            } else if (cells.length === 1) {
                 phase = 'SINGLE CELL';
             } else if (cells.length < 10) {
                 phase = 'EARLY DIVISION';
@@ -1009,18 +1143,24 @@
                 phase = 'DIFFERENTIATION';
             } else if (cells.length < 200) {
                 phase = 'MORPHOGENESIS';
+            } else if (cells.length < Config.maxCells * 0.9) {
+                phase = 'MATURING';
             } else {
                 phase = 'MATURE ORGANISM';
             }
             
-            document.getElementById('phaseIndicator').textContent = `Development: ${phase}`;
+            phaseIndicator.textContent = `Development: ${phase}`;
         }
         
         // Control event listeners
         document.getElementById('startBtn').addEventListener('click', () => {
             if (!running) {
                 running = true;
-                update();
+                if (startTime === 0) {
+                    startTime = performance.now();
+                }
+                lastFrameTime = performance.now();
+                requestAnimationFrame(gameLoop);
             }
         });
         
@@ -1036,17 +1176,17 @@
         
         document.getElementById('speedSlider').addEventListener('input', function() {
             Config.speed = parseInt(this.value);
-            document.getElementById('speedValue').textContent = this.value + 'x';
+            speedValueEl.textContent = this.value + 'x';
         });
         
         document.getElementById('mutationSlider').addEventListener('input', function() {
             Config.mutationRate = parseInt(this.value) / 100;
-            document.getElementById('mutationValue').textContent = this.value + '%';
+            mutationValueEl.textContent = this.value + '%';
         });
         
         document.getElementById('morphogenSlider').addEventListener('input', function() {
             Config.morphogenStrength = parseInt(this.value);
-            document.getElementById('morphogenValue').textContent = this.value;
+            document.getElementById('morphogenValue').textContent = this.value; // No dedicated element, fine for now
         });
         
         document.getElementById('divisionSlider').addEventListener('input', function() {
@@ -1145,8 +1285,8 @@
             
             exportCtx.fillStyle = '#a0c8ff';
             exportCtx.font = '14px Arial';
-            exportCtx.fillText(`Cells: ${cells.length} | Phase: ${document.getElementById('phaseIndicator').textContent}`, 10, 55);
-            exportCtx.fillText(`Mode: ${Config.developmentMode} | Time: ${time}`, 10, 75);
+            exportCtx.fillText(`Cells: ${cells.length} | Phase: ${phaseIndicator.textContent}`, 10, 55);
+            exportCtx.fillText(`Mode: ${Config.developmentMode} | Time: ${time} cycles`, 10, 75);
             
             // Convert to download
             exportCanvas.toBlob(blob => {
@@ -1164,8 +1304,8 @@
             const exportData = {
                 metadata: {
                     timestamp: new Date().toISOString(),
-                    developmentTime: time,
-                    phase: document.getElementById('phaseIndicator').textContent,
+                    developmentTime: time + " cycles",
+                    phase: phaseIndicator.textContent,
                     developmentMode: Config.developmentMode,
                     config: {
                         cellSize: Config.cellSize,
@@ -1206,6 +1346,13 @@
             URL.revokeObjectURL(url);
         });
         
+        function safePercentage(count, total) {
+            if (total === 0) {
+                return '0.0';
+            }
+            return ((count / total) * 100).toFixed(1);
+        }
+
         document.getElementById('exportStatsBtn').addEventListener('click', () => {
             // Create human-readable statistics report
             const stemCount = cells.filter(c => c.type === CellTypes.STEM).length;
@@ -1215,6 +1362,7 @@
             const structuralCount = cells.filter(c => c.type === CellTypes.STRUCTURAL).length;
             const reproductiveCount = cells.filter(c => c.type === CellTypes.REPRODUCTIVE).length;
             const maxGen = cells.length > 0 ? Math.max(...cells.map(c => c.generation)) : 0;
+            const totalCellCount = cells.length;
             
             const report = `
 ╔════════════════════════════════════════════════════════════════╗
@@ -1223,13 +1371,13 @@
 
 Generated: ${new Date().toLocaleString()}
 Development Mode: ${Config.developmentMode}
-Development Phase: ${document.getElementById('phaseIndicator').textContent}
+Development Phase: ${phaseIndicator.textContent}
 
 ═══════════════════════════════════════════════════════════════
 ORGANISM STATISTICS
 ═══════════════════════════════════════════════════════════════
 
-Total Cells:              ${cells.length}
+Total Cells:              ${totalCellCount}
 Cell Divisions:           ${totalDivisions}
 Maximum Generation:       ${maxGen}
 Development Time:         ${time} cycles
@@ -1238,12 +1386,12 @@ Development Time:         ${time} cycles
 CELL TYPE DISTRIBUTION
 ═══════════════════════════════════════════════════════════════
 
-🟣 Stem Cells:            ${stemCount} (${(stemCount/cells.length*100).toFixed(1)}%)
-🔴 Muscle Cells:          ${muscleCount} (${(muscleCount/cells.length*100).toFixed(1)}%)
-🔵 Neural Cells:          ${neuralCount} (${(neuralCount/cells.length*100).toFixed(1)}%)
-🟢 Digestive Cells:       ${digestiveCount} (${(digestiveCount/cells.length*100).toFixed(1)}%)
-🟡 Structural Cells:      ${structuralCount} (${(structuralCount/cells.length*100).toFixed(1)}%)
-🩷 Reproductive Cells:    ${reproductiveCount} (${(reproductiveCount/cells.length*100).toFixed(1)}%)
+🟣 Stem Cells:            ${stemCount} (${safePercentage(stemCount, totalCellCount)}%)
+🔴 Muscle Cells:          ${muscleCount} (${safePercentage(muscleCount, totalCellCount)}%)
+🔵 Neural Cells:          ${neuralCount} (${safePercentage(neuralCount, totalCellCount)}%)
+🟢 Digestive Cells:       ${digestiveCount} (${safePercentage(digestiveCount, totalCellCount)}%)
+🟡 Structural Cells:      ${structuralCount} (${safePercentage(structuralCount, totalCellCount)}%)
+🩷 Reproductive Cells:    ${reproductiveCount} (${safePercentage(reproductiveCount, totalCellCount)}%)
 
 ═══════════════════════════════════════════════════════════════
 DEVELOPMENT PARAMETERS
@@ -1259,22 +1407,23 @@ Simulation Speed:         ${Config.speed}x
 ANALYSIS
 ═══════════════════════════════════════════════════════════════
 
-Differentiation Progress: ${((1 - stemCount/cells.length) * 100).toFixed(1)}%
+Differentiation Progress: ${safePercentage(totalCellCount - stemCount, totalCellCount)}%
 Most Common Cell Type:    ${
-    [
-        {name: 'Stem', count: stemCount},
-        {name: 'Muscle', count: muscleCount},
-        {name: 'Neural', count: neuralCount},
-        {name: 'Digestive', count: digestiveCount},
-        {name: 'Structural', count: structuralCount},
-        {name: 'Reproductive', count: reproductiveCount}
-    ].sort((a, b) => b.count - a.count)[0].name
+    totalCellCount > 0 ? [
+            {name: 'Stem', count: stemCount},
+            {name: 'Muscle', count: muscleCount},
+            {name: 'Neural', count: neuralCount},
+            {name: 'Digestive', count: digestiveCount},
+            {name: 'Structural', count: structuralCount},
+            {name: 'Reproductive', count: reproductiveCount}
+        ].sort((a, b) => b.count - a.count)[0].name : 'None'
 }
 Development Stage:        ${
-    cells.length === 1 ? 'Single Cell' :
-    cells.length < 10 ? 'Early Division' :
-    cells.length < 50 ? 'Differentiation' :
-    cells.length < 200 ? 'Morphogenesis' :
+    totalCellCount === 0 ? (totalDivisions > 0 ? 'Deceased' : 'Primordial') :
+    totalCellCount === 1 ? 'Single Cell' :
+    totalCellCount < 10 ? 'Early Division' :
+    totalCellCount < 50 ? 'Differentiation' :
+    totalCellCount < 200 ? 'Morphogenesis' :
     'Mature Organism'
 }
 
